@@ -1,0 +1,12 @@
+# Віртуальне середовище
+venv/
+env/
+ENV/
+
+# Кеш Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Кеш тестування
+.pytest_cache/
