@@ -1,16 +1,14 @@
 import re
 from abc import ABC, abstractmethod
-
+import json
+import os
 
 class Contact(ABC):
-    """Базовий абстрактний клас контакту (демонстрація інкапсуляції та абстракції)."""
-
     def __init__(self, name: str, phone: str, email: str):
         self.name = name
         self._phone = ""
         self._email = ""
 
-        # Викликаємо сеттери для валідації вводу
         self.phone = phone
         self.email = email
 
@@ -37,12 +35,10 @@ class Contact(ABC):
 
     @abstractmethod
     def get_contact_type(self) -> str:
-        """Повертає тип контакту."""
         pass
 
     @abstractmethod
     def get_details(self) -> str:
-        """Поліморфний метод для отримання деталей."""
         pass
 
     def to_dict(self) -> dict:
@@ -56,7 +52,6 @@ class Contact(ABC):
 
 
 class PersonalContact(Contact):
-    """Особистий контакт (успадкування від Contact)."""
 
     def __init__(self, name: str, phone: str, email: str, birthday: str = ""):
         super().__init__(name, phone, email)
@@ -76,7 +71,6 @@ class PersonalContact(Contact):
 
 
 class BusinessContact(Contact):
-    """Робочий контакт (успадкування від Contact)."""
 
     def __init__(
         self,
@@ -107,6 +101,55 @@ class BusinessContact(Contact):
         data["position"] = self.position
         return data
 
+class StorageStrategy(ABC):
+    @abstractmethod
+    def save(self, contacts: list) -> None:
+        pass
 
-if __name__ == "__main__":
-    print("Прототип 1: Класи моделей успішно ініціалізовані!")
+    @abstractmethod
+    def load(self) -> list:
+        pass
+
+
+class JSONStorage(StorageStrategy):
+    def __init__(self, filename: str = "contacts.json"):
+        self.filename = filename
+
+    def save(self, contacts: list) -> None:
+        """Серіалізація списку контактів у JSON файл."""
+        data = [contact.to_dict() for contact in contacts]
+        with open(self.filename, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+
+    def load(self) -> list:
+        """Десеріалізація та відновлення об'єктів контактів із JSON файлу."""
+        if not os.path.exists(self.filename):
+            return []
+
+        try:
+            with open(self.filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                contacts = []
+                for item in data:
+                    c_type = item.get("type")
+                    if c_type == "Особистий":
+                        contact = PersonalContact(
+                            name=item.get("name", ""),
+                            phone=item.get("phone", ""),
+                            email=item.get("email", ""),
+                            birthday=item.get("birthday", ""),
+                        )
+                        contacts.append(contact)
+                    elif c_type == "Робочий":
+                        contact = BusinessContact(
+                            name=item.get("name", ""),
+                            phone=item.get("phone", ""),
+                            email=item.get("email", ""),
+                            company=item.get("company", ""),
+                            position=item.get("position", ""),
+                        )
+                        contacts.append(contact)
+                return contacts
+        except (json.JSONDecodeError, KeyError):
+            # Якщо файл пошкоджено, повертаємо порожній список
+            return []
