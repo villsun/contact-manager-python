@@ -153,3 +153,122 @@ class JSONStorage(StorageStrategy):
         except (json.JSONDecodeError, KeyError):
             # Якщо файл пошкоджено, повертаємо порожній список
             return []
+
+class ContactManager:
+    def __init__(self, storage: StorageStrategy):
+        self.storage = storage
+        self.contacts = self.storage.load()  # Завантажуємо існуючі контакти при старті
+
+    def add_contact(self, contact: Contact) -> None:
+        self.contacts.append(contact)
+        self.storage.save(self.contacts)
+
+    def get_all_contacts(self) -> list:
+        return self.contacts
+
+    def search_contacts(self, query: str) -> list:
+        query = query.lower()  # Переводимо пошуковий запит у нижній регістр
+        matching_contacts = []  # Список для збереження знайдених контактів
+
+        for contact in self.contacts:
+            # Перевіряємо кожне поле окремо для наочності
+            name_match = query in contact.name.lower()
+            phone_match = query in contact.phone.lower()
+            email_match = query in contact.email.lower()
+
+            # Якщо пошуковий запит збігається хоча б з одним із полів
+            if name_match or phone_match or email_match:
+                matching_contacts.append(contact)
+
+        return matching_contacts
+
+    def delete_contact(self, index: int) -> bool:
+        if 0 <= index < len(self.contacts):
+            del self.contacts[index]
+            self.storage.save(self.contacts)
+            return True
+        return False
+
+def main():
+    storage = JSONStorage("contacts.json")
+    manager = ContactManager(storage)
+
+    while True:
+        print("\n=== МЕНЕДЖЕР КОНТАКТІВ ===")
+        print("1. Переглянути всі контакти")
+        print("2. Додати особистий контакт")
+        print("3. Додати робочий контакт")
+        print("4. Пошук контактів")
+        print("5. Видалити контакт")
+        print("0. Вихід")
+
+        choice = input("Оберіть опцію: ").strip()
+
+        if choice == "1":
+            contacts = manager.get_all_contacts()
+            if not contacts:
+                print("\nСписок контактів порожній.")
+            else:
+                print("\n--- СПИСОК КОНТАКТІВ ---")
+                for idx, c in enumerate(contacts):
+                    print(f"{idx}. {c.get_details()}")
+
+        elif choice == "2":
+            try:
+                name = input("Ім'я: ")
+                phone = input("Телефон: ")
+                email = input("Email: ")
+                birthday = input("День народження (необов'язково): ")
+                contact = PersonalContact(name, phone, email, birthday)
+                manager.add_contact(contact)
+                print("Особистий контакт успішно додано!")
+            except ValueError as e:
+                print(f"Помилка валідації: {e}")
+
+        elif choice == "3":
+            try:
+                name = input("Ім'я: ")
+                phone = input("Телефон: ")
+                email = input("Email: ")
+                company = input("Компанія: ")
+                position = input("Посада: ")
+                contact = BusinessContact(name, phone, email, company, position)
+                manager.add_contact(contact)
+                print("Робочий контакт успішно додано!")
+            except ValueError as e:
+                print(f"Помилка валідації: {e}")
+
+        elif choice == "4":
+            query = input("Введіть пошуковий запит (ім'я або телефон): ")
+            results = manager.search_contacts(query)
+            if not results:
+                print("Нічого не знайдено.")
+            else:
+                print("\n--- РЕЗУЛЬТАТИ ПОШУКУ ---")
+                for c in results:
+                    print(c.get_details())
+
+        elif choice == "5":
+            contacts = manager.get_all_contacts()
+            if not contacts:
+                print("Немає контактів для видалення.")
+                continue
+            for idx, c in enumerate(contacts):
+                print(f"{idx}. {c.get_details()}")
+            try:
+                idx_to_del = int(input("Введіть номер контакту для видалення: "))
+                if manager.delete_contact(idx_to_del):
+                    print("Контакт успішно видалено!")
+                else:
+                    print("Невірний номер контакту.")
+            except ValueError:
+                print("Будь ласка, введіть число.")
+
+        elif choice == "0":
+            print("До побачення!")
+            break
+        else:
+            print("Невірний вибір. Спробуйте ще раз.")
+
+if __name__ == "__main__":
+    main()

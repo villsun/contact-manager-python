@@ -10,3 +10,6 @@ __pycache__/
 
 # Кеш тестування
 .pytest_cache/
+
+# JSON
+*.json
