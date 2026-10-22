@@ -1,14 +1,19 @@
-import re
-from abc import ABC, abstractmethod
 import json
 import os
+import re
+import tkinter as tk
+from abc import ABC, abstractmethod
+from tkinter import messagebox, ttk
+
 
 class Contact(ABC):
+
     def __init__(self, name: str, phone: str, email: str):
         self.name = name
         self._phone = ""
         self._email = ""
 
+        # Використання сеттерів для валідації
         self.phone = phone
         self.email = email
 
@@ -35,14 +40,16 @@ class Contact(ABC):
 
     @abstractmethod
     def get_contact_type(self) -> str:
+        """Повертає тип контакту."""
         pass
 
     @abstractmethod
     def get_details(self) -> str:
+        """Поліморфний метод для отримання повних деталей контакту."""
         pass
 
     def to_dict(self) -> dict:
-        """Конвертація об'єкта в словник для збереження."""
+        """Словникове представлення для збереження."""
         return {
             "type": self.get_contact_type(),
             "name": self.name,
@@ -50,9 +57,7 @@ class Contact(ABC):
             "email": self.email,
         }
 
-
 class PersonalContact(Contact):
-
     def __init__(self, name: str, phone: str, email: str, birthday: str = ""):
         super().__init__(name, phone, email)
         self.birthday = birthday
@@ -71,7 +76,6 @@ class PersonalContact(Contact):
 
 
 class BusinessContact(Contact):
-
     def __init__(
         self,
         name: str,
@@ -116,16 +120,13 @@ class JSONStorage(StorageStrategy):
         self.filename = filename
 
     def save(self, contacts: list) -> None:
-        """Серіалізація списку контактів у JSON файл."""
         data = [contact.to_dict() for contact in contacts]
         with open(self.filename, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
 
     def load(self) -> list:
-        """Десеріалізація та відновлення об'єктів контактів із JSON файлу."""
         if not os.path.exists(self.filename):
             return []
-
         try:
             with open(self.filename, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -151,13 +152,12 @@ class JSONStorage(StorageStrategy):
                         contacts.append(contact)
                 return contacts
         except (json.JSONDecodeError, KeyError):
-            # Якщо файл пошкоджено, повертаємо порожній список
             return []
 
 class ContactManager:
     def __init__(self, storage: StorageStrategy):
         self.storage = storage
-        self.contacts = self.storage.load()  # Завантажуємо існуючі контакти при старті
+        self.contacts = self.storage.load()
 
     def add_contact(self, contact: Contact) -> None:
         self.contacts.append(contact)
@@ -167,16 +167,14 @@ class ContactManager:
         return self.contacts
 
     def search_contacts(self, query: str) -> list:
-        query = query.lower()  # Переводимо пошуковий запит у нижній регістр
-        matching_contacts = []  # Список для збереження знайдених контактів
+        query = query.lower()
+        matching_contacts = []
 
         for contact in self.contacts:
-            # Перевіряємо кожне поле окремо для наочності
             name_match = query in contact.name.lower()
             phone_match = query in contact.phone.lower()
             email_match = query in contact.email.lower()
 
-            # Якщо пошуковий запит збігається хоча б з одним із полів
             if name_match or phone_match or email_match:
                 matching_contacts.append(contact)
 
@@ -189,86 +187,175 @@ class ContactManager:
             return True
         return False
 
-def main():
-    storage = JSONStorage("contacts.json")
-    manager = ContactManager(storage)
+class ContactManagerUI:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("Система управління контактами")
+        self.root.geometry("800x500")
 
-    while True:
-        print("\n=== МЕНЕДЖЕР КОНТАКТІВ ===")
-        print("1. Переглянути всі контакти")
-        print("2. Додати особистий контакт")
-        print("3. Додати робочий контакт")
-        print("4. Пошук контактів")
-        print("5. Видалити контакт")
-        print("0. Вихід")
+        self.storage = JSONStorage("contacts.json")
+        self.manager = ContactManager(self.storage)
 
-        choice = input("Оберіть опцію: ").strip()
+        self._build_ui()
+        self.refresh_list()
 
-        if choice == "1":
-            contacts = manager.get_all_contacts()
-            if not contacts:
-                print("\nСписок контактів порожній.")
+    def _build_ui(self):
+        # Панель пошуку
+        search_frame = ttk.LabelFrame(self.root, text="Пошук контактів")
+        search_frame.pack(fill="x", padx=10, pady=5)
+
+        ttk.Label(search_frame, text="Запит:").pack(side="left", padx=5, pady=5)
+        self.search_entry = ttk.Entry(search_frame)
+        self.search_entry.pack(side="left", fill="x", expand=True, padx=5, pady=5)
+        self.search_entry.bind("<KeyRelease>", self.on_search)
+
+        # Таблиця контактів (Treeview)
+        list_frame = ttk.Frame(self.root)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=5)
+
+        columns = ("type", "name", "phone", "email", "extra")
+        self.tree = ttk.Treeview(
+            list_frame, columns=columns, show="headings", selectmode="browse"
+        )
+        self.tree.heading("type", text="Тип")
+        self.tree.heading("name", text="ПІБ / Ім'я")
+        self.tree.heading("phone", text="Телефон")
+        self.tree.heading("email", text="Email")
+        self.tree.heading("extra", text="Додаткова інформація")
+
+        self.tree.column("type", width=90)
+        self.tree.column("name", width=160)
+        self.tree.column("phone", width=120)
+        self.tree.column("email", width=150)
+        self.tree.column("extra", width=200)
+
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscroll=scrollbar.set)
+        self.tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # Кнопки управління
+        btn_frame = ttk.Frame(self.root)
+        btn_frame.pack(fill="x", padx=10, pady=10)
+
+        ttk.Button(btn_frame, text="Додати контакт", command=self.open_add_dialog).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Видалити обраний", command=self.delete_selected_contact).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Оновити список", command=self.refresh_list).pack(side="right", padx=5)
+
+    def refresh_list(self, contacts_list=None):
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        items = contacts_list if contacts_list is not None else self.manager.get_all_contacts()
+        for idx, contact in enumerate(items):
+            extra = ""
+            if isinstance(contact, PersonalContact):
+                extra = f"Д/Н: {contact.birthday}" if contact.birthday else ""
+            elif isinstance(contact, BusinessContact):
+                extra = f"Компанія: {contact.company} ({contact.position})"
+
+            self.tree.insert(
+                "",
+                "end",
+                iid=str(idx),
+                values=(
+                    contact.get_contact_type(),
+                    contact.name,
+                    contact.phone,
+                    contact.email,
+                    extra,
+                ),
+            )
+
+    def on_search(self, event):
+        query = self.search_entry.get()
+        results = self.manager.search_contacts(query)
+        self.refresh_list(results)
+
+    def delete_selected_contact(self):
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showwarning("Увага", "Оберіть контакт у списку для видалення.")
+            return
+
+        idx = int(selected[0])
+        if messagebox.askyesno("Підтвердження", "Ви впевнені, що хочете видалити цей контакт?"):
+            if self.manager.delete_contact(idx):
+                self.refresh_list()
+                messagebox.showinfo("Успіх", "Контакт успішно видалено!")
             else:
-                print("\n--- СПИСОК КОНТАКТІВ ---")
-                for idx, c in enumerate(contacts):
-                    print(f"{idx}. {c.get_details()}")
+                messagebox.showerror("Помилка", "Не вдалося видалити контакт.")
 
-        elif choice == "2":
-            try:
-                name = input("Ім'я: ")
-                phone = input("Телефон: ")
-                email = input("Email: ")
-                birthday = input("День народження (необов'язково): ")
-                contact = PersonalContact(name, phone, email, birthday)
-                manager.add_contact(contact)
-                print("Особистий контакт успішно додано!")
-            except ValueError as e:
-                print(f"Помилка валідації: {e}")
+    def open_add_dialog(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Додавання нового контакту")
+        dialog.geometry("400x380")
+        dialog.grab_set()
 
-        elif choice == "3":
-            try:
-                name = input("Ім'я: ")
-                phone = input("Телефон: ")
-                email = input("Email: ")
-                company = input("Компанія: ")
-                position = input("Посада: ")
-                contact = BusinessContact(name, phone, email, company, position)
-                manager.add_contact(contact)
-                print("Робочий контакт успішно додано!")
-            except ValueError as e:
-                print(f"Помилка валідації: {e}")
+        ttk.Label(dialog, text="Тип контакту:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        type_var = tk.StringVar(value="Особистий")
+        type_cb = ttk.Combobox(dialog, textvariable=type_var, values=["Особистий", "Робочий"], state="readonly")
+        type_cb.grid(row=0, column=1, padx=10, pady=10, sticky="ew")
 
-        elif choice == "4":
-            query = input("Введіть пошуковий запит (ім'я або телефон): ")
-            results = manager.search_contacts(query)
-            if not results:
-                print("Нічого не знайдено.")
+        fields = {}
+        labels = [
+            ("Ім'я / ПІБ:", "name"),
+            ("Телефон:", "phone"),
+            ("Email:", "email"),
+            ("День народження:", "birthday"),
+            ("Компанія:", "company"),
+            ("Посада:", "position"),
+        ]
+
+        for i, (label_text, key) in enumerate(labels, start=1):
+            ttk.Label(dialog, text=label_text).grid(row=i, column=0, padx=10, pady=5, sticky="w")
+            ent = ttk.Entry(dialog)
+            ent.grid(row=i, column=1, padx=10, pady=5, sticky="ew")
+            fields[key] = ent
+
+        def toggle_fields(*args):
+            if type_var.get() == "Особистий":
+                fields["birthday"].config(state="normal")
+                fields["company"].config(state="disabled")
+                fields["position"].config(state="disabled")
             else:
-                print("\n--- РЕЗУЛЬТАТИ ПОШУКУ ---")
-                for c in results:
-                    print(c.get_details())
+                fields["birthday"].config(state="disabled")
+                fields["company"].config(state="normal")
+                fields["position"].config(state="normal")
 
-        elif choice == "5":
-            contacts = manager.get_all_contacts()
-            if not contacts:
-                print("Немає контактів для видалення.")
-                continue
-            for idx, c in enumerate(contacts):
-                print(f"{idx}. {c.get_details()}")
+        type_var.trace_add("write", toggle_fields)
+        toggle_fields()
+
+        def save_contact():
             try:
-                idx_to_del = int(input("Введіть номер контакту для видалення: "))
-                if manager.delete_contact(idx_to_del):
-                    print("Контакт успішно видалено!")
+                ctype = type_var.get()
+                name = fields["name"].get().strip()
+                phone = fields["phone"].get().strip()
+                email = fields["email"].get().strip()
+
+                if not name:
+                    raise ValueError("Ім'я не може бути порожнім.")
+
+                if ctype == "Особистий":
+                    contact = PersonalContact(name, phone, email, fields["birthday"].get().strip())
                 else:
-                    print("Невірний номер контакту.")
-            except ValueError:
-                print("Будь ласка, введіть число.")
+                    contact = BusinessContact(
+                        name, phone, email, 
+                        fields["company"].get().strip(), 
+                        fields["position"].get().strip()
+                    )
 
-        elif choice == "0":
-            print("До побачення!")
-            break
-        else:
-            print("Невірний вибір. Спробуйте ще раз.")
+                self.manager.add_contact(contact)
+                self.refresh_list()
+                dialog.destroy()
+                messagebox.showinfo("Успіх", "Контакт успішно додано!")
+            except ValueError as e:
+                messagebox.showerror("Помилка валідації", str(e))
+
+        ttk.Button(dialog, text="Зберегти", command=save_contact).grid(row=7, column=0, columnspan=2, pady=15)
+
 
 if __name__ == "__main__":
-    main()
+    root = tk.Tk()
+    app = ContactManagerUI(root)
+    root.mainloop()
